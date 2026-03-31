@@ -1,0 +1,54 @@
+import os
+import numpy as np
+import tensorflow as tf
+from tensorflow_model_optimization.quantization.keras import vitis_quantize
+
+def build_lenet():
+    inputs = tf.keras.Input(shape=(28, 28, 1), name="input")
+
+    x = tf.keras.layers.Conv2D(
+        filters=6,
+        kernel_size=(5, 5),
+        padding="same",
+        activation="relu",
+        name="conv1"
+    )(inputs)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
+
+    x = tf.keras.layers.Conv2D(
+        filters=16,
+        kernel_size=(5, 5),
+        padding="valid",
+        activation="relu",
+        name="conv2"
+    )(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), name="pool2")(x)
+
+    x = tf.keras.layers.Flatten(name="flatten")(x)
+    x = tf.keras.layers.Dense(120, activation="relu", name="fc1")(x)
+    x = tf.keras.layers.Dense(84, activation="relu", name="fc2")(x)
+    outputs = tf.keras.layers.Dense(10, activation="softmax", name="predictions")(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="lenet_mnist_dualflow")
+    return model
+
+os.makedirs("vai/quantized", exist_ok=True)
+
+model = build_lenet()
+model.load_weights("../../models/lenet_mnist_best.h5")
+
+x_calib = np.load("../../vai/calib/mnist_calib_200.npy").astype("float32")
+
+print("Modelo reconstruído e pesos carregados.")
+print("Calib shape:", x_calib.shape)
+
+quantizer = vitis_quantize.VitisQuantizer(model)
+
+quantized_model = quantizer.quantize_model(
+    calib_dataset=x_calib,
+    calib_steps=40,
+    input_shape=model.input_shape
+)
+
+os.makedirs("../../vai/quantized", exist_ok=True)
+quantized_model.save("../../vai/quantized/lenet_mnist_quantized.h5")
